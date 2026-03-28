@@ -1,119 +1,81 @@
-![banner](./mini-lsm-book/src/mini-lsm-logo.png)
+# preemptive-lsm
 
-# LSM in a Week
+This repository is a **derivative work** of [mini-lsm](https://github.com/skyzh/mini-lsm)
+by [Alex Chi Z](https://github.com/skyzh), licensed under the Apache License, Version 2.0.
 
-[![CI (main)](https://github.com/skyzh/mini-lsm/actions/workflows/main.yml/badge.svg)](https://github.com/skyzh/mini-lsm/actions/workflows/main.yml)
+Only the **Week 2 reference solution** (`mini-lsm/`) has been extracted and modified for
+research purposes. All other course infrastructure (starter code, MVCC variant, tutorial
+book, CI configs) has been removed.
 
-Build a simple key-value storage engine in a week! And extend your LSM engine on the second + third week.
+## Research Goal
 
-## [Book](https://skyzh.github.io/mini-lsm)
+Study whether software-simulated **preemptive yielding** in background compaction reduces
+tail latency for foreground read/write operations in an LSM-tree storage engine.
 
-The Mini-LSM book is available at [https://skyzh.github.io/mini-lsm](https://skyzh.github.io/mini-lsm). You may follow this guide and implement the Mini-LSM storage engine. We have 3 weeks (parts) of the course, each of them consists of 7 days (chapters).
+We insert cooperative yield points into the compaction merge loop so the compaction thread
+periodically checks whether foreground work is pending and, if so, yields execution.
 
-## Community
-
-You may join skyzh's Discord server and study with the mini-lsm community.
-
-[![Join skyzh's Discord Server](mini-lsm-book/src/discord-badge.svg)](https://skyzh.dev/join/discord)
-
-**Add Your Solution**
-
-If you finished at least one full week of this course, you can add your solution to the community solution list at [SOLUTIONS.md](./SOLUTIONS.md). You can submit a pull request and we might do a quick review of your code in return of your hard work.
-
-## Development
-
-**For Students**
-
-You should modify code in `mini-lsm-starter` directory.
+## Repository Structure
 
 ```
-cargo x install-tools
-cargo x copy-test --week 1 --day 1
-cargo x scheck
-cargo run --bin mini-lsm-cli
-cargo run --bin compaction-simulator
+preemptive-lsm/
+├── CLAUDE.md              # Project instructions for AI-assisted development
+├── LICENSE                # Original Apache 2.0 license from mini-lsm (preserved)
+├── README.md              # This file
+├── mini-lsm/             # Week 2 solution extracted from skyzh/mini-lsm
+│   └── src/
+│       ├── compact.rs     # PRIMARY MODIFICATION TARGET
+│       ├── lsm_storage.rs # May need minor changes for yield signaling
+│       └── ...
+├── bench/                 # Benchmark harness (original work)
+│   └── src/
+│       ├── main.rs        # CLI entry point
+│       ├── workloads.rs   # YCSB-style workload generators
+│       └── metrics.rs     # HDR histogram latency recorder
+└── analysis/              # Plotting and analysis scripts (original work)
+    └── plot.py
 ```
 
-**For Course Developers**
+## Modifications to mini-lsm
 
-You should modify `mini-lsm` and `mini-lsm-mvcc`
+All modifications follow the annotation rules in `CLAUDE.md`:
 
-```
-cargo x install-tools
-cargo x check
-cargo x book
-```
+- Every modified file carries a `// MODIFIED by ...` header.
+- Non-trivial changes are wrapped in `// --- BEGIN/END PREEMPTIVE YIELD MODIFICATION ---` blocks.
 
-If you changed public API in the reference solution, you might also need to synchronize it to the starter crate.
-To do this, use `cargo x sync`.
+Planned changes:
+- **`compact.rs`** — insert yield checkpoints inside the SST merge loop
+- **`lsm_storage.rs`** — add shared `Arc<AtomicBool>` yield flag; set/clear in `get()`/`put()`
 
-## Code Structure
+## Yield Strategies
 
-* mini-lsm: the final solution code for <= week 2
-* mini-lsm-mvcc: the final solution code for week 3 MVCC
-* mini-lsm-starter: the starter code
-* mini-lsm-book: the course
+| Strategy | Description |
+|---|---|
+| `NoYield` | Baseline — no modification to compaction loop |
+| `UnconditionalYield` | Yield every N entries regardless of foreground pressure |
+| `ConditionalYield` | Yield every N entries only when the foreground flag is set |
 
-We have another repo mini-lsm-solution-checkpoint at [https://github.com/skyzh/mini-lsm-solution-checkpoint](https://github.com/skyzh/mini-lsm-solution-checkpoint). In this repo, each commit corresponds to a chapter in the course. We will not update the solution checkpoint very often.
+## Running the Benchmark
 
-## Demo
+```bash
+# Build
+cargo build --release --bin bench
 
-You can run the reference solution by yourself to gain an overview of the system before you start.
+# Baseline (no yielding), Workload A, 4 threads, 30 seconds
+cargo run --release --bin bench -- --strategy no-yield --workload a --threads 4 --duration-secs 30
 
-```
-cargo run --bin mini-lsm-cli-ref
-cargo run --bin mini-lsm-cli-mvcc-ref
-```
-
-And we have a compaction simulator to experiment with your compaction algorithm implementation,
-
-```
-cargo run --bin compaction-simulator-ref
-cargo run --bin compaction-simulator-mvcc-ref
+# Conditional yield, Workload B
+cargo run --release --bin bench -- --strategy conditional-yield --workload b --threads 4
 ```
 
-## Course Structure
+## Running Tests
 
-We have 3 weeks + 1 extra week (in progress) for this course.
-
-* Week 1: Storage Format + Engine Skeleton
-* Week 2: Compaction and Persistence
-* Week 3: Multi-Version Concurrency Control
-* The Extra Week / Rest of Your Life: Optimizations (unlikely to be available in 2025...)
-
-![Course Roadmap](./mini-lsm-book/src/lsm-tutorial/00-full-overview.svg)
-
-| Week + Chapter | Topic                                                       |
-| -------------- | ----------------------------------------------------------- |
-| 1.1            | Memtable                                                    |
-| 1.2            | Merge Iterator                                              |
-| 1.3            | Block                                                       |
-| 1.4            | Sorted String Table (SST)                                   |
-| 1.5            | Read Path                                                   |
-| 1.6            | Write Path                                                  |
-| 1.7            | SST Optimizations: Prefix Key Encoding + Bloom Filters      |
-| 2.1            | Compaction Implementation                                   |
-| 2.2            | Simple Compaction Strategy (Traditional Leveled Compaction) |
-| 2.3            | Tiered Compaction Strategy (RocksDB Universal Compaction)   |
-| 2.4            | Leveled Compaction Strategy (RocksDB Leveled Compaction)    |
-| 2.5            | Manifest                                                    |
-| 2.6            | Write-Ahead Log (WAL)                                       |
-| 2.7            | Batch Write and Checksums                                   |
-| 3.1            | Timestamp Key Encoding                                      |
-| 3.2            | Snapshot Read - Memtables and Timestamps                    |
-| 3.3            | Snapshot Read - Transaction API                             |
-| 3.4            | Watermark and Garbage Collection                            |
-| 3.5            | Transactions and Optimistic Concurrency Control             |
-| 3.6            | Serializable Snapshot Isolation                             |
-| 3.7            | Compaction Filters                                          |
-
-## Related Projects
-
-mini-lsm inspired several projects used in production.
-
-* [SlateDB](https://slatedb.io/docs/design/overview/) is an LSM engine over the object storage system.
-* [Tonbo](https://tonbo.io/about) stores parquet files directly on the object storage and organizes them in an LSM tree structure.
+```bash
+cargo test -p mini-lsm
+```
 
 ## License
 
-The Mini-LSM starter code and solution are under [Apache 2.0 license](LICENSE). The author reserves the full copyright of the course materials (markdown files and figures).
+This derivative work is distributed under the **Apache License, Version 2.0** — see [LICENSE](LICENSE).
+
+Original work copyright © 2022–2025 Alex Chi Z. Original source: https://github.com/skyzh/mini-lsm
