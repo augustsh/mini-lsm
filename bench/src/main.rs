@@ -104,7 +104,7 @@ fn open_store(
 // --- END PREEMPTIVE YIELD MODIFICATION ---
     let opts = LsmStorageOptions {
         block_size: 4096,
-        target_sst_size: 2 << 20, // 2 MB
+        target_sst_size: 64 << 20, // 64 MB
         num_memtable_limit: 3,
         compaction_options: CompactionOptions::Leveled(LeveledCompactionOptions {
             level0_file_num_compaction_trigger: 4,
