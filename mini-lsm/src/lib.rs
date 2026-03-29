@@ -11,6 +11,12 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+//
+// MODIFIED by preemptive-lsm authors, 2026
+// Changes: added preempt module declaration.
+//
+// Original source: https://github.com/skyzh/mini-lsm
+// Original license: Apache License, Version 2.0
 
 pub mod block;
 pub mod compact;
@@ -24,6 +30,9 @@ pub mod mem_table;
 pub mod mvcc;
 pub mod table;
 pub mod wal;
+// --- BEGIN PREEMPTIVE YIELD MODIFICATION ---
+pub mod preempt;
+// --- END PREEMPTIVE YIELD MODIFICATION ---
 
 #[cfg(test)]
 mod tests;

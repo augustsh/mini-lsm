@@ -11,6 +11,13 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+//
+// MODIFIED by preemptive-lsm authors, 2026
+// Changes: removed diagnostic println! calls from flush/recovery hot paths;
+//          yield flag fields will be added here.
+//
+// Original source: https://github.com/skyzh/mini-lsm
+// Original license: Apache License, Version 2.0
 
 use std::collections::{BTreeSet, HashMap};
 use std::fs::File;
@@ -94,6 +101,7 @@ pub struct LsmStorageOptions {
     pub compaction_options: CompactionOptions,
     pub enable_wal: bool,
     pub serializable: bool,
+    pub yield_strategy: crate::preempt::YieldStrategy, // ADDED: preemptive yield config
 }
 
 impl LsmStorageOptions {
@@ -105,6 +113,7 @@ impl LsmStorageOptions {
             enable_wal: false,
             num_memtable_limit: 50,
             serializable: false,
+            yield_strategy: crate::preempt::YieldStrategy::NoYield, // ADDED
         }
     }
 
@@ -116,6 +125,7 @@ impl LsmStorageOptions {
             enable_wal: false,
             num_memtable_limit: 2,
             serializable: false,
+            yield_strategy: crate::preempt::YieldStrategy::NoYield, // ADDED
         }
     }
 
@@ -127,6 +137,7 @@ impl LsmStorageOptions {
             enable_wal: false,
             num_memtable_limit: 2,
             serializable: false,
+            yield_strategy: crate::preempt::YieldStrategy::NoYield, // ADDED
         }
     }
 }
@@ -181,6 +192,7 @@ pub(crate) struct LsmStorageInner {
     pub(crate) mvcc: Option<LsmMvccInner>,
     #[allow(dead_code)]
     pub(crate) compaction_filters: Arc<Mutex<Vec<CompactionFilter>>>,
+    pub(crate) yield_state: Arc<crate::preempt::YieldState>, // ADDED: preemptive yield state
 }
 
 /// A thin wrapper for `LsmStorageInner` and the user interface for MiniLSM.
@@ -405,7 +417,7 @@ impl LsmStorageInner {
                 state.sstables.insert(table_id, Arc::new(sst));
                 sst_cnt += 1;
             }
-            println!("{} SSTs opened", sst_cnt);
+
 
             next_sst_id += 1;
 
@@ -434,7 +446,6 @@ impl LsmStorageInner {
                         wal_cnt += 1;
                     }
                 }
-                println!("{} WALs recovered", wal_cnt);
                 state.memtable = Arc::new(MemTable::create_with_wal(
                     next_sst_id,
                     Self::path_of_wal_static(path, next_sst_id),
@@ -447,6 +458,9 @@ impl LsmStorageInner {
             manifest = m;
         };
 
+        // --- BEGIN PREEMPTIVE YIELD MODIFICATION ---
+        let yield_strategy = options.yield_strategy;
+        // --- END PREEMPTIVE YIELD MODIFICATION ---
         let storage = Self {
             state: Arc::new(RwLock::new(Arc::new(state))),
             state_lock: Mutex::new(()),
@@ -458,6 +472,9 @@ impl LsmStorageInner {
             options: options.into(),
             mvcc: None,
             compaction_filters: Arc::new(Mutex::new(Vec::new())),
+            // --- BEGIN PREEMPTIVE YIELD MODIFICATION ---
+            yield_state: crate::preempt::YieldState::new(yield_strategy),
+            // --- END PREEMPTIVE YIELD MODIFICATION ---
         };
         storage.sync_dir()?;
 
@@ -475,6 +492,12 @@ impl LsmStorageInner {
 
     /// Get a key from the storage. In day 7, this can be further optimized by using a bloom filter.
     pub fn get(&self, key: &[u8]) -> Result<Option<Bytes>> {
+        // --- BEGIN PREEMPTIVE YIELD MODIFICATION ---
+        self.yield_state.enter();
+        struct Guard<'a>(&'a crate::preempt::YieldState);
+        impl Drop for Guard<'_> { fn drop(&mut self) { self.0.exit(); } }
+        let _guard = Guard(&self.yield_state);
+        // --- END PREEMPTIVE YIELD MODIFICATION ---
         let snapshot = {
             let guard = self.state.read();
             Arc::clone(&guard)
@@ -552,6 +575,12 @@ impl LsmStorageInner {
     }
 
     pub fn write_batch<T: AsRef<[u8]>>(&self, batch: &[WriteBatchRecord<T>]) -> Result<()> {
+        // --- BEGIN PREEMPTIVE YIELD MODIFICATION ---
+        self.yield_state.enter();
+        struct Guard<'a>(&'a crate::preempt::YieldState);
+        impl Drop for Guard<'_> { fn drop(&mut self) { self.0.exit(); } }
+        let _guard = Guard(&self.yield_state);
+        // --- END PREEMPTIVE YIELD MODIFICATION ---
         for record in batch {
             match record {
                 WriteBatchRecord::Del(key) => {
@@ -705,7 +734,6 @@ impl LsmStorageInner {
                 // In tiered compaction, create a new tier
                 snapshot.levels.insert(0, (sst_id, vec![sst_id]));
             }
-            println!("flushed {}.sst with size={}", sst_id, sst.table_size());
             snapshot.sstables.insert(sst_id, sst);
             // Update the snapshot.
             *guard = Arc::new(snapshot);

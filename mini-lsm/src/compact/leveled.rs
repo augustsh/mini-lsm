@@ -11,6 +11,12 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+//
+// MODIFIED by preemptive-lsm authors, 2026
+// Changes: removed diagnostic println! calls from the compaction hot path.
+//
+// Original source: https://github.com/skyzh/mini-lsm
+// Original license: Apache License, Version 2.0
 
 use std::collections::HashSet;
 
@@ -110,7 +116,6 @@ impl LeveledCompactionController {
 
         // Flush L0 SST is the top priority
         if snapshot.l0_sstables.len() >= self.options.level0_file_num_compaction_trigger {
-            println!("flush L0 SST to base level {}", base_level);
             return Some(LeveledCompactionTask {
                 upper_level: None,
                 upper_level_sst_ids: snapshot.l0_sstables.clone(),
@@ -134,25 +139,9 @@ impl LeveledCompactionController {
         priorities.sort_by(|a, b| a.partial_cmp(b).unwrap().reverse());
         let priority = priorities.first();
         if let Some((_, level)) = priority {
-            println!(
-                "target level sizes: {:?}, real level sizes: {:?}, base_level: {}",
-                target_level_size
-                    .iter()
-                    .map(|x| format!("{:.3}MB", *x as f64 / 1024.0 / 1024.0))
-                    .collect::<Vec<_>>(),
-                real_level_size
-                    .iter()
-                    .map(|x| format!("{:.3}MB", *x as f64 / 1024.0 / 1024.0))
-                    .collect::<Vec<_>>(),
-                base_level,
-            );
 
             let level = *level;
             let selected_sst = snapshot.levels[level - 1].1.iter().min().copied().unwrap(); // select the oldest sst to compact
-            println!(
-                "compaction triggered by priority: {level} out of {:?}, select {selected_sst} for compaction",
-                priorities
-            );
             return Some(LeveledCompactionTask {
                 upper_level: Some(level),
                 upper_level_sst_ids: vec![selected_sst],

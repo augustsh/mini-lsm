@@ -344,6 +344,7 @@ fn main() -> Result<()> {
             },
             enable_wal: args.enable_wal,
             serializable: args.serializable,
+            yield_strategy: mini_lsm::preempt::YieldStrategy::NoYield, // ADDED
         },
     )?;
 

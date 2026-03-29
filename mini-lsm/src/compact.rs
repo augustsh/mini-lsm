@@ -11,6 +11,13 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+//
+// MODIFIED by preemptive-lsm authors, 2026
+// Changes: removed diagnostic println! calls from the compaction hot path;
+//          yield checkpoints will be added here.
+//
+// Original source: https://github.com/skyzh/mini-lsm
+// Original license: Apache License, Version 2.0
 
 mod leveled;
 mod simple_leveled;
@@ -134,6 +141,9 @@ impl LsmStorageInner {
     ) -> Result<Vec<Arc<SsTable>>> {
         let mut builder = None;
         let mut new_sst = Vec::new();
+        // --- BEGIN PREEMPTIVE YIELD MODIFICATION ---
+        let mut countdown = self.yield_state.initial_countdown();
+        // --- END PREEMPTIVE YIELD MODIFICATION ---
 
         while iter.is_valid() {
             if builder.is_none() {
@@ -148,6 +158,9 @@ impl LsmStorageInner {
                 builder_inner.add(iter.key(), iter.value());
             }
             iter.next()?;
+            // --- BEGIN PREEMPTIVE YIELD MODIFICATION ---
+            self.yield_state.maybe_yield(&mut countdown);
+            // --- END PREEMPTIVE YIELD MODIFICATION ---
 
             if builder_inner.estimated_size() >= self.options.target_sst_size {
                 let sst_id = self.next_sst_id();
@@ -281,8 +294,6 @@ impl LsmStorageInner {
             l1_sstables: l1_sstables.clone(),
         };
 
-        println!("force full compaction: {:?}", compaction_task);
-
         let sstables = self.compact(&compaction_task)?;
         let mut ids = Vec::with_capacity(sstables.len());
 
@@ -319,8 +330,6 @@ impl LsmStorageInner {
             std::fs::remove_file(self.path_of_sst(*sst))?;
         }
 
-        println!("force full compaction done, new SSTs: {:?}", ids);
-
         Ok(())
     }
 
@@ -335,8 +344,6 @@ impl LsmStorageInner {
         let Some(task) = task else {
             return Ok(());
         };
-        self.dump_structure();
-        println!("running compaction task: {:?}", task);
         let sstables = self.compact(&task)?;
         let output = sstables.iter().map(|x| x.sst_id()).collect::<Vec<_>>();
         let ssts_to_remove = {
@@ -368,12 +375,6 @@ impl LsmStorageInner {
                 .add_record(&state_lock, ManifestRecord::Compaction(task, new_sst_ids))?;
             ssts_to_remove
         };
-        println!(
-            "compaction finished: {} files removed, {} files added, output={:?}",
-            ssts_to_remove.len(),
-            output.len(),
-            output
-        );
         for sst in ssts_to_remove {
             std::fs::remove_file(self.path_of_sst(sst.sst_id()))?;
         }

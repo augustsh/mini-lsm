@@ -11,6 +11,12 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+//
+// MODIFIED by preemptive-lsm authors, 2026
+// Changes: removed diagnostic println! calls from the compaction hot path.
+//
+// Original source: https://github.com/skyzh/mini-lsm
+// Original license: Apache License, Version 2.0
 
 use std::collections::HashMap;
 
@@ -61,10 +67,6 @@ impl TieredCompactionController {
         let space_amp_ratio =
             (size as f64) / (snapshot.levels.last().unwrap().1.len() as f64) * 100.0;
         if space_amp_ratio >= self.options.max_size_amplification_percent as f64 {
-            println!(
-                "compaction triggered by space amplification ratio: {}",
-                space_amp_ratio
-            );
             return Some(TieredCompactionTask {
                 tiers: snapshot.levels.clone(),
                 bottom_tier_included: true,
@@ -78,12 +80,7 @@ impl TieredCompactionController {
             let next_level_size = snapshot.levels[id + 1].1.len();
             let current_size_ratio = next_level_size as f64 / size as f64;
             if current_size_ratio > size_ratio_trigger && id + 1 >= self.options.min_merge_width {
-                println!(
-                    "compaction triggered by size ratio: {} > {}",
-                    current_size_ratio * 100.0,
-                    size_ratio_trigger * 100.0
-                );
-                return Some(TieredCompactionTask {
+                    return Some(TieredCompactionTask {
                     tiers: snapshot
                         .levels
                         .iter()
@@ -100,7 +97,6 @@ impl TieredCompactionController {
             .levels
             .len()
             .min(self.options.max_merge_width.unwrap_or(usize::MAX));
-        println!("compaction triggered by reducing sorted runs");
         Some(TieredCompactionTask {
             tiers: snapshot
                 .levels
