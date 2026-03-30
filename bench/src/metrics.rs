@@ -26,6 +26,8 @@ pub struct BenchResult {
     pub strategy: String,
     pub workload: String,
     pub threads: usize,
+    #[serde(default = "default_cores")]
+    pub cores: usize,
     pub yield_interval: usize,
     pub operations: u64,
     pub throughput_ops: f64,
@@ -38,6 +40,10 @@ pub struct BenchResult {
     /// Per-window time series. Empty for results loaded from older JSON files.
     #[serde(default)]
     pub time_series: Vec<TimeSeriesPoint>,
+}
+
+fn default_cores() -> usize {
+    1
 }
 
 pub struct LatencyRecorder {
@@ -105,6 +111,7 @@ impl LatencyRecorder {
         strategy: &str,
         workload: &str,
         threads: usize,
+        cores: usize,
         yield_interval: usize,
         time_series: Vec<TimeSeriesPoint>,
     ) -> BenchResult {
@@ -112,6 +119,7 @@ impl LatencyRecorder {
             strategy: strategy.to_string(),
             workload: workload.to_string(),
             threads,
+            cores,
             yield_interval,
             operations: self.count,
             throughput_ops: self.throughput(),

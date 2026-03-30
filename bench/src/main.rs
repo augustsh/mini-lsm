@@ -71,6 +71,10 @@ struct Args {
     #[arg(long, default_value = "1")]
     threads: usize,
 
+    /// Number of CPU cores allocated to this container (metadata only, for result tracking).
+    #[arg(long, default_value = "1")]
+    cores: usize,
+
     /// Benchmark duration in seconds.
     #[arg(long, default_value = "120")]
     duration_secs: u64,
@@ -224,6 +228,7 @@ fn run_benchmark(args: &Args, store: Arc<MiniLsm>) -> Result<BenchResult> {
         &format!("{:?}", args.strategy),
         &format!("{:?}", args.workload),
         args.threads,
+        args.cores,
         args.yield_interval,
         time_series,
     ))

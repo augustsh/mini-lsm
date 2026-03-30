@@ -4,7 +4,7 @@
 # It is original work and not derived from mini-lsm.
 #
 # Usage:
-#   python analysis/plot.py results/docker/experiments_t1.json results/docker/experiments_t2.json results/docker/experiments_t4.json --out results/plots
+#   python analysis/plot.py results/docker/experiments_c1.json results/docker/experiments_c2.json results/docker/experiments_c4.json --out results/plots
 
 import argparse
 import json
@@ -69,9 +69,10 @@ def _mean_field(records, field):
     return np.mean(vals) if vals else float("nan")
 
 
-def _best_interval(results, strategy, workload, threads, metric="p999_us", minimize=True):
+def _best_interval(results, strategy, workload, threads, cores, metric="p999_us", minimize=True):
     """Find the yield interval that gives the best (lowest/highest) metric value."""
-    candidates = _filter(results, strategy=strategy, workload=workload, threads=threads)
+    candidates = _filter(results, strategy=strategy, workload=workload,
+                         threads=threads, cores=cores)
     if not candidates:
         return None, float("nan")
     intervals = _unique_sorted(candidates, "yield_interval")
@@ -97,156 +98,229 @@ def _rolling_mean(ys, window=ROLLING_WINDOW):
 
 
 # ── plot 1: interval sweep grid ───────────────────────────────────────────────
-# Per workload: rows = thread counts, cols = (p99, p99.9, throughput)
+# Per (workload, cores): rows = thread counts, cols = (p99, p99.9, throughput)
 # Lines for each yield strategy; NoYield as horizontal baseline.
 
 def plot_interval_sweep_grid(results, out_dir):
     workloads = _unique_sorted(results, "workload")
     thread_counts = _unique_sorted(results, "threads")
+    core_counts = _unique_sorted(results, "cores")
     yield_strats = [s for s in _unique_sorted(results, "strategy") if s != "NoYield"]
     metrics = TAIL_METRICS + [THROUGHPUT_METRIC]
-    markers_cycle = ["o", "s", "^", "D", "v"]
     linestyles = ["-", "--", "-.", ":"]
 
     for wl in workloads:
-        nrows, ncols = len(thread_counts), len(metrics)
-        fig, axes = plt.subplots(nrows, ncols, figsize=(5 * ncols, 4 * nrows),
-                                  squeeze=False)
-        fig.suptitle(f"Yield Interval Sweep — Workload {wl}", fontsize=15, y=1.01)
+        for cc in core_counts:
+            nrows, ncols = len(thread_counts), len(metrics)
+            fig, axes = plt.subplots(nrows, ncols, figsize=(5 * ncols, 4 * nrows),
+                                      squeeze=False)
+            fig.suptitle(f"Yield Interval Sweep — Workload {wl}, {cc} core(s)",
+                         fontsize=15, y=1.01)
 
-        for ri, tc in enumerate(thread_counts):
-            for ci, (field, ylabel) in enumerate(metrics):
-                ax = axes[ri][ci]
+            for ri, tc in enumerate(thread_counts):
+                for ci, (field, ylabel) in enumerate(metrics):
+                    ax = axes[ri][ci]
 
-                for si, strat in enumerate(yield_strats):
-                    recs = _filter(results, strategy=strat, workload=wl, threads=tc)
-                    if not recs:
-                        continue
-                    ivs = sorted({r["yield_interval"] for r in recs})
-                    ys = [_mean_field(_filter(recs, yield_interval=iv), field) for iv in ivs]
-                    style = _style(strat)
-                    ax.plot(ivs, ys, label=strat,
-                            color=style["color"], marker=style["marker"],
-                            linestyle=linestyles[si % len(linestyles)],
-                            linewidth=1.5, markersize=5)
+                    for si, strat in enumerate(yield_strats):
+                        recs = _filter(results, strategy=strat, workload=wl,
+                                       threads=tc, cores=cc)
+                        if not recs:
+                            continue
+                        ivs = sorted({r["yield_interval"] for r in recs})
+                        ys = [_mean_field(_filter(recs, yield_interval=iv), field)
+                              for iv in ivs]
+                        style = _style(strat)
+                        ax.plot(ivs, ys, label=strat,
+                                color=style["color"], marker=style["marker"],
+                                linestyle=linestyles[si % len(linestyles)],
+                                linewidth=1.5, markersize=5)
 
-                # NoYield baseline
-                baseline_recs = _filter(results, strategy="NoYield", workload=wl, threads=tc)
-                if baseline_recs:
-                    bv = _mean_field(baseline_recs, field)
-                    ax.axhline(bv, color=_style("NoYield")["color"],
-                               linestyle="--", linewidth=1.5, alpha=0.6,
-                               label="NoYield")
+                    # NoYield baseline
+                    baseline_recs = _filter(results, strategy="NoYield", workload=wl,
+                                            threads=tc, cores=cc)
+                    if baseline_recs:
+                        bv = _mean_field(baseline_recs, field)
+                        ax.axhline(bv, color=_style("NoYield")["color"],
+                                   linestyle="--", linewidth=1.5, alpha=0.6,
+                                   label="NoYield")
 
-                ax.set_xscale("log")
-                ax.set_ylabel(ylabel)
-                if ri == nrows - 1:
-                    ax.set_xlabel("Yield interval (entries)")
-                if ri == 0:
-                    ax.set_title(ylabel)
-                if ci == 0:
-                    # Place row label in figure coords to the left of the subplot row
-                    bbox = ax.get_position()
-                    fig.text(0.01, (bbox.y0 + bbox.y1) / 2, f"t={tc}",
-                             ha="center", va="center", fontsize=13,
-                             fontweight="bold", rotation=90)
-                if ri == 0 and ci == ncols - 1:
-                    ax.legend(fontsize=7, loc="best")
-                ax.grid(True, alpha=0.3)
+                    ax.set_xscale("log")
+                    ax.set_ylabel(ylabel)
+                    if ri == nrows - 1:
+                        ax.set_xlabel("Yield interval (entries)")
+                    if ri == 0:
+                        ax.set_title(ylabel)
+                    if ci == 0:
+                        bbox = ax.get_position()
+                        fig.text(0.01, (bbox.y0 + bbox.y1) / 2, f"t={tc}",
+                                 ha="center", va="center", fontsize=13,
+                                 fontweight="bold", rotation=90)
+                    if ri == 0 and ci == ncols - 1:
+                        ax.legend(fontsize=7, loc="best")
+                    ax.grid(True, alpha=0.3)
 
-        plt.tight_layout(rect=[0.03, 0, 1, 0.97])
-        path = out_dir / f"interval_sweep_workload_{wl}.pdf"
-        plt.savefig(path, bbox_inches="tight")
-        print(f"Saved: {path}")
-        plt.close()
+            plt.tight_layout(rect=[0.03, 0, 1, 0.97])
+            path = out_dir / f"interval_sweep_{wl}_c{cc}.pdf"
+            plt.savefig(path, bbox_inches="tight")
+            print(f"Saved: {path}")
+            plt.close()
 
 
 # ── plot 2: thread scaling ────────────────────────────────────────────────────
-# Per workload: x = thread count, y = metric.
+# Per (workload, cores): x = thread count, y = metric.
 # Lines: NoYield, best ConditionalYield, best UnconditionalYield.
-# "Best" = interval that minimizes p99.9 (or maximizes throughput).
 
 def plot_thread_scaling(results, out_dir):
     workloads = _unique_sorted(results, "workload")
     thread_counts = _unique_sorted(results, "threads")
+    core_counts = _unique_sorted(results, "cores")
     strategies = _unique_sorted(results, "strategy")
     metrics = TAIL_METRICS + [THROUGHPUT_METRIC]
 
     for wl in workloads:
-        fig, axes = plt.subplots(1, len(metrics), figsize=(5 * len(metrics), 4.5),
-                                  squeeze=False)
-        fig.suptitle(f"Thread Scaling — Workload {wl}", fontsize=14)
+        for cc in core_counts:
+            fig, axes = plt.subplots(1, len(metrics), figsize=(5 * len(metrics), 4.5),
+                                      squeeze=False)
+            fig.suptitle(f"Thread Scaling — Workload {wl}, {cc} core(s)", fontsize=14)
 
-        for ci, (field, ylabel) in enumerate(metrics):
-            ax = axes[0][ci]
-            minimize = field != "throughput_ops"
+            for ci, (field, ylabel) in enumerate(metrics):
+                ax = axes[0][ci]
+                minimize = field != "throughput_ops"
 
-            for strat in strategies:
-                style = _style(strat)
-                ys = []
-                labels = []
-                for tc in thread_counts:
-                    if strat == "NoYield":
-                        recs = _filter(results, strategy=strat, workload=wl, threads=tc)
-                        ys.append(_mean_field(recs, field))
-                        labels.append("")
-                    else:
-                        best_iv, best_val = _best_interval(
-                            results, strat, wl, tc, field, minimize)
-                        ys.append(best_val)
-                        labels.append(f"iv={best_iv}")
+                for strat in strategies:
+                    style = _style(strat)
+                    ys = []
+                    labels = []
+                    for tc in thread_counts:
+                        if strat == "NoYield":
+                            recs = _filter(results, strategy=strat, workload=wl,
+                                           threads=tc, cores=cc)
+                            ys.append(_mean_field(recs, field))
+                            labels.append("")
+                        else:
+                            best_iv, best_val = _best_interval(
+                                results, strat, wl, tc, cc, field, minimize)
+                            ys.append(best_val)
+                            labels.append(f"iv={best_iv}")
 
-                lbl = strat if strat == "NoYield" else f"{strat} (best iv)"
-                ax.plot(thread_counts, ys, label=lbl,
-                        color=style["color"], marker=style["marker"],
-                        linewidth=2, markersize=7)
+                    lbl = strat if strat == "NoYield" else f"{strat} (best iv)"
+                    ax.plot(thread_counts, ys, label=lbl,
+                            color=style["color"], marker=style["marker"],
+                            linewidth=2, markersize=7)
 
-                # Annotate best interval on each point
-                if strat != "NoYield":
-                    for xi, (tc, y, lab) in enumerate(zip(thread_counts, ys, labels)):
-                        if lab:
-                            ax.annotate(lab, (tc, y), textcoords="offset points",
-                                        xytext=(5, 5), fontsize=6, color=style["color"])
+                    if strat != "NoYield":
+                        for xi, (tc, y, lab) in enumerate(zip(thread_counts, ys, labels)):
+                            if lab:
+                                ax.annotate(lab, (tc, y), textcoords="offset points",
+                                            xytext=(5, 5), fontsize=6, color=style["color"])
 
-            ax.set_xlabel("Foreground threads")
-            ax.set_ylabel(ylabel)
-            ax.set_title(ylabel)
-            ax.set_xticks(thread_counts)
-            ax.legend(fontsize=7)
-            ax.grid(True, alpha=0.3)
+                ax.set_xlabel("Foreground threads")
+                ax.set_ylabel(ylabel)
+                ax.set_title(ylabel)
+                ax.set_xticks(thread_counts)
+                ax.legend(fontsize=7)
+                ax.grid(True, alpha=0.3)
 
-        plt.tight_layout()
-        path = out_dir / f"thread_scaling_workload_{wl}.pdf"
-        plt.savefig(path, bbox_inches="tight")
-        print(f"Saved: {path}")
-        plt.close()
+            plt.tight_layout()
+            path = out_dir / f"thread_scaling_{wl}_c{cc}.pdf"
+            plt.savefig(path, bbox_inches="tight")
+            print(f"Saved: {path}")
+            plt.close()
 
 
-# ── plot 3: summary bar chart ─────────────────────────────────────────────────
-# One figure: grouped bars showing % improvement in p99.9 over NoYield
-# for the best interval of each yield strategy, across workloads and thread counts.
+# ── plot 3: core scaling ─────────────────────────────────────────────────────
+# Per (workload, threads): x = core count, y = metric.
+# Lines: NoYield, best ConditionalYield, best UnconditionalYield.
+
+def plot_core_scaling(results, out_dir):
+    workloads = _unique_sorted(results, "workload")
+    thread_counts = _unique_sorted(results, "threads")
+    core_counts = _unique_sorted(results, "cores")
+    strategies = _unique_sorted(results, "strategy")
+    metrics = TAIL_METRICS + [THROUGHPUT_METRIC]
+
+    if len(core_counts) < 2:
+        return
+
+    for wl in workloads:
+        for tc in thread_counts:
+            fig, axes = plt.subplots(1, len(metrics), figsize=(5 * len(metrics), 4.5),
+                                      squeeze=False)
+            fig.suptitle(f"Core Scaling — Workload {wl}, t={tc}", fontsize=14)
+
+            for ci, (field, ylabel) in enumerate(metrics):
+                ax = axes[0][ci]
+                minimize = field != "throughput_ops"
+
+                for strat in strategies:
+                    style = _style(strat)
+                    ys = []
+                    labels = []
+                    for cc in core_counts:
+                        if strat == "NoYield":
+                            recs = _filter(results, strategy=strat, workload=wl,
+                                           threads=tc, cores=cc)
+                            ys.append(_mean_field(recs, field))
+                            labels.append("")
+                        else:
+                            best_iv, best_val = _best_interval(
+                                results, strat, wl, tc, cc, field, minimize)
+                            ys.append(best_val)
+                            labels.append(f"iv={best_iv}")
+
+                    lbl = strat if strat == "NoYield" else f"{strat} (best iv)"
+                    ax.plot(core_counts, ys, label=lbl,
+                            color=style["color"], marker=style["marker"],
+                            linewidth=2, markersize=7)
+
+                    if strat != "NoYield":
+                        for xi, (cc, y, lab) in enumerate(zip(core_counts, ys, labels)):
+                            if lab:
+                                ax.annotate(lab, (cc, y), textcoords="offset points",
+                                            xytext=(5, 5), fontsize=6, color=style["color"])
+
+                ax.set_xlabel("CPU cores allocated")
+                ax.set_ylabel(ylabel)
+                ax.set_title(ylabel)
+                ax.set_xticks(core_counts)
+                ax.legend(fontsize=7)
+                ax.grid(True, alpha=0.3)
+
+            plt.tight_layout()
+            path = out_dir / f"core_scaling_{wl}_t{tc}.pdf"
+            plt.savefig(path, bbox_inches="tight")
+            print(f"Saved: {path}")
+            plt.close()
+
+
+# ── plot 4: summary improvement bar chart ─────────────────────────────────────
+# Grouped bars: % change in p99.9 over NoYield for the best interval.
+# Groups: (workload, threads, cores).
 
 def plot_summary_improvement(results, out_dir):
     workloads = _unique_sorted(results, "workload")
     thread_counts = _unique_sorted(results, "threads")
+    core_counts = _unique_sorted(results, "cores")
     yield_strats = [s for s in _unique_sorted(results, "strategy") if s != "NoYield"]
 
-    # Build groups: each group is (workload, threads)
-    groups = [(wl, tc) for wl in workloads for tc in thread_counts]
-    group_labels = [f"{wl}/t={tc}" for wl, tc in groups]
+    groups = [(wl, tc, cc) for wl in workloads
+              for tc in thread_counts for cc in core_counts]
+    group_labels = [f"{wl}/t{tc}/c{cc}" for wl, tc, cc in groups]
 
     x = np.arange(len(groups))
     width = 0.8 / max(len(yield_strats), 1)
 
-    fig, ax = plt.subplots(figsize=(max(12, len(groups) * 1.2), 5))
+    fig, ax = plt.subplots(figsize=(max(14, len(groups) * 0.8), 5))
 
     for si, strat in enumerate(yield_strats):
         style = _style(strat)
         improvements = []
-        for wl, tc in groups:
+        for wl, tc, cc in groups:
             baseline = _mean_field(
-                _filter(results, strategy="NoYield", workload=wl, threads=tc), "p999_us")
-            _, best_val = _best_interval(results, strat, wl, tc, "p999_us", minimize=True)
+                _filter(results, strategy="NoYield", workload=wl,
+                        threads=tc, cores=cc), "p999_us")
+            _, best_val = _best_interval(results, strat, wl, tc, cc,
+                                         "p999_us", minimize=True)
             if baseline and baseline > 0 and not np.isnan(best_val):
                 pct = (best_val - baseline) / baseline * 100
             else:
@@ -259,11 +333,11 @@ def plot_summary_improvement(results, out_dir):
         for bar, pct in zip(bars, improvements):
             va = "bottom" if pct >= 0 else "top"
             ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height(),
-                    f"{pct:+.1f}%", ha="center", va=va, fontsize=6)
+                    f"{pct:+.1f}%", ha="center", va=va, fontsize=5)
 
     ax.axhline(0, color="black", linewidth=0.8)
     ax.set_xticks(x)
-    ax.set_xticklabels(group_labels, rotation=45, ha="right", fontsize=8)
+    ax.set_xticklabels(group_labels, rotation=60, ha="right", fontsize=6)
     ax.set_ylabel("p99.9 change vs NoYield (%)")
     ax.set_title("Best-Interval p99.9 Improvement over NoYield")
     ax.legend(fontsize=8)
@@ -276,34 +350,35 @@ def plot_summary_improvement(results, out_dir):
     plt.close()
 
 
-# ── plot 4: throughput cost summary ───────────────────────────────────────────
-# Same layout as summary_improvement but for throughput (positive = better).
+# ── plot 5: throughput cost summary ───────────────────────────────────────────
 
 def plot_throughput_cost(results, out_dir):
     workloads = _unique_sorted(results, "workload")
     thread_counts = _unique_sorted(results, "threads")
+    core_counts = _unique_sorted(results, "cores")
     yield_strats = [s for s in _unique_sorted(results, "strategy") if s != "NoYield"]
 
-    groups = [(wl, tc) for wl in workloads for tc in thread_counts]
-    group_labels = [f"{wl}/t={tc}" for wl, tc in groups]
+    groups = [(wl, tc, cc) for wl in workloads
+              for tc in thread_counts for cc in core_counts]
+    group_labels = [f"{wl}/t{tc}/c{cc}" for wl, tc, cc in groups]
 
     x = np.arange(len(groups))
     width = 0.8 / max(len(yield_strats), 1)
 
-    fig, ax = plt.subplots(figsize=(max(12, len(groups) * 1.2), 5))
+    fig, ax = plt.subplots(figsize=(max(14, len(groups) * 0.8), 5))
 
     for si, strat in enumerate(yield_strats):
         style = _style(strat)
         changes = []
-        for wl, tc in groups:
+        for wl, tc, cc in groups:
             baseline = _mean_field(
-                _filter(results, strategy="NoYield", workload=wl, threads=tc),
-                "throughput_ops")
-            # Use the same interval that was best for p99.9
-            best_iv, _ = _best_interval(results, strat, wl, tc, "p999_us", minimize=True)
+                _filter(results, strategy="NoYield", workload=wl,
+                        threads=tc, cores=cc), "throughput_ops")
+            best_iv, _ = _best_interval(results, strat, wl, tc, cc,
+                                         "p999_us", minimize=True)
             if best_iv is not None:
                 recs = _filter(results, strategy=strat, workload=wl,
-                               threads=tc, yield_interval=best_iv)
+                               threads=tc, cores=cc, yield_interval=best_iv)
                 val = _mean_field(recs, "throughput_ops")
             else:
                 val = float("nan")
@@ -319,11 +394,11 @@ def plot_throughput_cost(results, out_dir):
         for bar, pct in zip(bars, changes):
             va = "bottom" if pct >= 0 else "top"
             ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height(),
-                    f"{pct:+.1f}%", ha="center", va=va, fontsize=6)
+                    f"{pct:+.1f}%", ha="center", va=va, fontsize=5)
 
     ax.axhline(0, color="black", linewidth=0.8)
     ax.set_xticks(x)
-    ax.set_xticklabels(group_labels, rotation=45, ha="right", fontsize=8)
+    ax.set_xticklabels(group_labels, rotation=60, ha="right", fontsize=6)
     ax.set_ylabel("Throughput change vs NoYield (%)")
     ax.set_title("Throughput Cost at Best p99.9 Interval")
     ax.legend(fontsize=8)
@@ -336,9 +411,9 @@ def plot_throughput_cost(results, out_dir):
     plt.close()
 
 
-# ── plot 5: time series ───────────────────────────────────────────────────────
-# Per (workload, thread_count): p99.9 and throughput over time.
-# Shows NoYield + ConditionalYield at the median interval.
+# ── plot 6: time series ───────────────────────────────────────────────────────
+# Per (workload, threads, cores): p99.9 and throughput over time.
+# Shows NoYield + yield strategies at the median interval.
 
 def plot_time_series(results, out_dir):
     ts_results = [r for r in results if r.get("time_series")]
@@ -347,9 +422,9 @@ def plot_time_series(results, out_dir):
 
     workloads = _unique_sorted(ts_results, "workload")
     thread_counts = _unique_sorted(ts_results, "threads")
+    core_counts = _unique_sorted(ts_results, "cores")
     yield_strats = [s for s in _unique_sorted(ts_results, "strategy") if s != "NoYield"]
 
-    # Pick the median interval for yield strategies
     all_intervals = _unique_sorted(ts_results, "yield_interval")
     mid_interval = all_intervals[len(all_intervals) // 2] if all_intervals else 1000
 
@@ -360,50 +435,55 @@ def plot_time_series(results, out_dir):
 
     for wl in workloads:
         for tc in thread_counts:
-            fig, axes = plt.subplots(len(TS_METRICS), 1,
-                                      figsize=(12, 3.5 * len(TS_METRICS)),
-                                      sharex=True)
-            fig.suptitle(f"Time Series — Workload {wl}, t={tc}", fontsize=14, y=1.01)
+            for cc in core_counts:
+                fig, axes = plt.subplots(len(TS_METRICS), 1,
+                                          figsize=(12, 3.5 * len(TS_METRICS)),
+                                          sharex=True)
+                fig.suptitle(f"Time Series — Workload {wl}, t={tc}, {cc} core(s)",
+                             fontsize=14, y=1.01)
 
-            # Strategies to plot: NoYield + each yield strat at median interval
-            to_plot = []
-            no_yield = _filter(ts_results, strategy="NoYield", workload=wl, threads=tc)
-            if no_yield:
-                to_plot.append(("NoYield", no_yield[0]))
-            for strat in yield_strats:
-                recs = _filter(ts_results, strategy=strat, workload=wl,
-                               threads=tc, yield_interval=mid_interval)
-                if recs:
-                    to_plot.append((f"{strat} iv={mid_interval}", recs[0]))
+                to_plot = []
+                no_yield = _filter(ts_results, strategy="NoYield", workload=wl,
+                                   threads=tc, cores=cc)
+                if no_yield:
+                    to_plot.append(("NoYield", no_yield[0]))
+                for strat in yield_strats:
+                    recs = _filter(ts_results, strategy=strat, workload=wl,
+                                   threads=tc, cores=cc, yield_interval=mid_interval)
+                    if recs:
+                        to_plot.append((f"{strat} iv={mid_interval}", recs[0]))
 
-            for ax, (field, ylabel, use_log) in zip(axes, TS_METRICS):
-                for label, rec in to_plot:
-                    ts = rec.get("time_series", [])
-                    if not ts:
-                        continue
-                    # Determine base strategy name for coloring
-                    base_strat = rec["strategy"]
-                    style = _style(base_strat)
-                    xs = np.array([pt["elapsed_secs"] for pt in ts])
-                    ys = np.array([pt[field] for pt in ts])
+                if not to_plot:
+                    plt.close()
+                    continue
 
-                    ax.scatter(xs, ys, color=style["color"], alpha=0.10, s=5,
-                               linewidths=0)
-                    trend = _rolling_mean(ys)
-                    ax.plot(xs, trend, color=style["color"], linewidth=2, label=label)
+                for ax, (field, ylabel, use_log) in zip(axes, TS_METRICS):
+                    for label, rec in to_plot:
+                        ts = rec.get("time_series", [])
+                        if not ts:
+                            continue
+                        base_strat = rec["strategy"]
+                        style = _style(base_strat)
+                        xs = np.array([pt["elapsed_secs"] for pt in ts])
+                        ys = np.array([pt[field] for pt in ts])
 
-                ax.set_ylabel(ylabel)
-                if use_log:
-                    ax.set_yscale("log")
-                ax.legend(fontsize=7, loc="upper right")
-                ax.grid(True, alpha=0.3)
+                        ax.scatter(xs, ys, color=style["color"], alpha=0.10, s=5,
+                                   linewidths=0)
+                        trend = _rolling_mean(ys)
+                        ax.plot(xs, trend, color=style["color"], linewidth=2, label=label)
 
-            axes[-1].set_xlabel("Elapsed (s)")
-            plt.tight_layout()
-            path = out_dir / f"time_series_{wl}_t{tc}.pdf"
-            plt.savefig(path, bbox_inches="tight")
-            print(f"Saved: {path}")
-            plt.close()
+                    ax.set_ylabel(ylabel)
+                    if use_log:
+                        ax.set_yscale("log")
+                    ax.legend(fontsize=7, loc="upper right")
+                    ax.grid(True, alpha=0.3)
+
+                axes[-1].set_xlabel("Elapsed (s)")
+                plt.tight_layout()
+                path = out_dir / f"time_series_{wl}_t{tc}_c{cc}.pdf"
+                plt.savefig(path, bbox_inches="tight")
+                print(f"Saved: {path}")
+                plt.close()
 
 
 # ── entry point ────────────────────────────────────────────────────────────────
@@ -430,10 +510,12 @@ def main():
     print(f"  Strategies: {_unique_sorted(results, 'strategy')}")
     print(f"  Workloads:  {_unique_sorted(results, 'workload')}")
     print(f"  Threads:    {_unique_sorted(results, 'threads')}")
+    print(f"  Cores:      {_unique_sorted(results, 'cores')}")
     print()
 
     plot_interval_sweep_grid(results, out_dir)
     plot_thread_scaling(results, out_dir)
+    plot_core_scaling(results, out_dir)
     plot_summary_improvement(results, out_dir)
     plot_throughput_cost(results, out_dir)
     plot_time_series(results, out_dir)
