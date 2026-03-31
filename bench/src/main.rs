@@ -1,4 +1,4 @@
-// Copyright 2026 preemptive-lsm authors
+// Copyright 2026 August S.H.
 // Licensed under the Apache License, Version 2.0
 // This file is part of the preemptive-lsm project.
 // It is original work and not derived from mini-lsm.
@@ -19,8 +19,6 @@ use tempfile::TempDir;
 
 use metrics::{BenchResult, LatencyRecorder, TimeSeriesPoint};
 use workloads::{KeyDistribution, KeyGenerator, Workload, is_read, random_value};
-
-// --- BEGIN PREEMPTIVE YIELD MODIFICATION ---
 fn to_storage_strategy(
     s: &YieldStrategy,
     interval: usize,
@@ -35,7 +33,6 @@ fn to_storage_strategy(
         }
     }
 }
-// --- END PREEMPTIVE YIELD MODIFICATION ---
 
 /// Yield strategy for the compaction thread.
 #[derive(Debug, Clone, ValueEnum)]
@@ -100,12 +97,10 @@ struct Args {
     json_out: Option<PathBuf>,
 }
 
-// --- BEGIN PREEMPTIVE YIELD MODIFICATION ---
 fn open_store(
     dir: &TempDir,
     yield_strategy: mini_lsm::preempt::YieldStrategy,
 ) -> Result<Arc<MiniLsm>> {
-// --- END PREEMPTIVE YIELD MODIFICATION ---
     let opts = LsmStorageOptions {
         block_size: 4096,
         target_sst_size: 64 << 20, // 64 MB

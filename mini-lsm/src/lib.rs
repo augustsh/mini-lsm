@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
-// MODIFIED by preemptive-lsm authors, 2026
+// MODIFIED by August S.H., 2026
 // Changes: added preempt module declaration.
 //
 // Original source: https://github.com/skyzh/mini-lsm

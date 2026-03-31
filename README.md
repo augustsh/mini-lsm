@@ -1,4 +1,4 @@
-# preemptive-lsm
+# mini-lsm
 
 This repository is a **derivative work** of [mini-lsm](https://github.com/skyzh/mini-lsm)
 by [Alex Chi Z](https://github.com/skyzh), licensed under the Apache License, Version 2.0.
@@ -15,37 +15,10 @@ tail latency for foreground read/write operations in an LSM-tree storage engine.
 We insert cooperative yield points into the compaction merge loop so the compaction thread
 periodically checks whether foreground work is pending and, if so, yields execution.
 
-## Repository Structure
-
-```
-preemptive-lsm/
-├── CLAUDE.md              # Project instructions for AI-assisted development
-├── LICENSE                # Original Apache 2.0 license from mini-lsm (preserved)
-├── README.md              # This file
-├── mini-lsm/             # Week 2 solution extracted from skyzh/mini-lsm
-│   └── src/
-│       ├── compact.rs     # PRIMARY MODIFICATION TARGET
-│       ├── lsm_storage.rs # May need minor changes for yield signaling
-│       └── ...
-├── bench/                 # Benchmark harness (original work)
-│   └── src/
-│       ├── main.rs        # CLI entry point
-│       ├── workloads.rs   # YCSB-style workload generators
-│       └── metrics.rs     # HDR histogram latency recorder
-└── analysis/              # Plotting and analysis scripts (original work)
-    └── plot.py
-```
-
 ## Modifications to mini-lsm
-
-All modifications follow the annotation rules in `CLAUDE.md`:
 
 - Every modified file carries a `// MODIFIED by ...` header.
 - Non-trivial changes are wrapped in `// --- BEGIN/END PREEMPTIVE YIELD MODIFICATION ---` blocks.
-
-Planned changes:
-- **`compact.rs`** — insert yield checkpoints inside the SST merge loop
-- **`lsm_storage.rs`** — add shared `Arc<AtomicBool>` yield flag; set/clear in `get()`/`put()`
 
 ## Yield Strategies
 
@@ -57,6 +30,9 @@ Planned changes:
 
 ## Running the Benchmark
 
+Requires Rust toolchain (https://www.rust-lang.org/tools/install).
+
+### Running individual strategies
 ```bash
 # Build
 cargo build --release --bin bench
@@ -66,6 +42,14 @@ cargo run --release --bin bench -- --strategy no-yield --workload a --threads 4 
 
 # Conditional yield, Workload B
 cargo run --release --bin bench -- --strategy conditional-yield --workload b --threads 4
+```
+
+### Run the full suite of strategies and workloads
+This requires Docker to be  installed and the daemon running.
+In its current configuration, the script requires 7+ CPU cores to run the different strategies in parallel.
+The full test suite takes several hours to complete.
+```bash
+./scripts/run_experiments.sh
 ```
 
 ## Running Tests

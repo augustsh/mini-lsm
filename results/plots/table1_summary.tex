@@ -1,0 +1,12 @@
+% Table 1: Latency summary (c=1, t=1)
+\begin{tabular}{l r r r r r r r r r r}
+\toprule
+& \multicolumn{4}{c}{NoYield (\textmu s)} & \multicolumn{4}{c}{ConditionalYield (\textmu s)} & p99.9 & Throughput \\
+WL & p50 & p95 & p99 & p99.9 & p50 & p95 & p99 & p99.9 & \% $\Delta$ & $\Delta$ \\
+\midrule
+A & 1.80 & 25.9 & 64.6 & 3,088 & 1.77 & 29.5 & 74.7 & 524.3 & -83.0\% & +41.7\% \\
+B & 1.68 & 15.9 & 28.6 & 64.5 & 1.65 & 15.7 & 28.5 & 66.2 & +2.6\% & -0.6\% \\
+C & 1.68 & 8.48 & 41.8 & 6,009 & 1.69 & 7.50 & 52.3 & 761.3 & -87.3\% & +94.3\% \\
+D & 5.97 & 9.70 & 29.5 & 69.8 & 5.98 & 9.76 & 29.7 & 72.4 & +3.7\% & -0.6\% \\
+\bottomrule
+\end{tabular}

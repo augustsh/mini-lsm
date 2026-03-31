@@ -1,4 +1,4 @@
-// Copyright 2026 preemptive-lsm authors
+// Copyright 2026 August S.H.
 // Licensed under the Apache License, Version 2.0
 // This file is part of the preemptive-lsm project.
 // It is original work and not derived from mini-lsm.

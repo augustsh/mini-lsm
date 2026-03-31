@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
-// MODIFIED by preemptive-lsm authors, 2026
+// MODIFIED by August S. H., 2026
 // Changes: removed diagnostic println! calls from flush/recovery hot paths;
-//          yield flag fields will be added here.
+//          added preemptive yield in get/put/write_batch and the corresponding configuration in LsmStorageOptions;
 //
 // Original source: https://github.com/skyzh/mini-lsm
 // Original license: Apache License, Version 2.0
@@ -113,7 +113,7 @@ impl LsmStorageOptions {
             enable_wal: false,
             num_memtable_limit: 50,
             serializable: false,
-            yield_strategy: crate::preempt::YieldStrategy::NoYield, // ADDED
+            yield_strategy: crate::preempt::YieldStrategy::NoYield, // ADDED: preemptive yield config
         }
     }
 
@@ -125,7 +125,7 @@ impl LsmStorageOptions {
             enable_wal: false,
             num_memtable_limit: 2,
             serializable: false,
-            yield_strategy: crate::preempt::YieldStrategy::NoYield, // ADDED
+            yield_strategy: crate::preempt::YieldStrategy::NoYield, // ADDED: preemptive yield config
         }
     }
 
@@ -137,7 +137,7 @@ impl LsmStorageOptions {
             enable_wal: false,
             num_memtable_limit: 2,
             serializable: false,
-            yield_strategy: crate::preempt::YieldStrategy::NoYield, // ADDED
+            yield_strategy: crate::preempt::YieldStrategy::NoYield, // ADDED: preemptive yield config
         }
     }
 }

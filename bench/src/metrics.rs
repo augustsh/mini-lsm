@@ -1,4 +1,4 @@
-// Copyright 2026 preemptive-lsm authors
+// Copyright 2026 August S.H.
 // Licensed under the Apache License, Version 2.0
 // This file is part of the preemptive-lsm project.
 // It is original work and not derived from mini-lsm.
@@ -40,6 +40,9 @@ pub struct BenchResult {
     /// Per-window time series. Empty for results loaded from older JSON files.
     #[serde(default)]
     pub time_series: Vec<TimeSeriesPoint>,
+    /// Sampled CDF: list of (quantile, latency_us) pairs for plotting.
+    #[serde(default)]
+    pub cdf: Vec<(f64, f64)>,
 }
 
 fn default_cores() -> usize {
@@ -129,7 +132,30 @@ impl LatencyRecorder {
             p999_us: Self::ns_to_us(self.histogram.value_at_quantile(0.999)),
             max_us: Self::ns_to_us(self.histogram.max()),
             time_series,
+            cdf: self.sample_cdf(),
         }
+    }
+
+    /// Sample the CDF at ~200 quantile points for plotting.
+    /// Returns (quantile, latency_us) pairs.
+    fn sample_cdf(&self) -> Vec<(f64, f64)> {
+        let mut points = Vec::with_capacity(220);
+        // Dense sampling in the body (0.01 to 0.90, step 0.01).
+        for i in 1..=90 {
+            let q = i as f64 / 100.0;
+            points.push((q, Self::ns_to_us(self.histogram.value_at_quantile(q))));
+        }
+        // Dense sampling in the tail (0.90 to 0.999, step 0.001).
+        for i in 900..=999 {
+            let q = i as f64 / 1000.0;
+            points.push((q, Self::ns_to_us(self.histogram.value_at_quantile(q))));
+        }
+        // Ultra-tail (0.9991 to 0.9999, step 0.0001).
+        for i in 9991..=9999 {
+            let q = i as f64 / 10000.0;
+            points.push((q, Self::ns_to_us(self.histogram.value_at_quantile(q))));
+        }
+        points
     }
 
     pub fn print_percentiles(&self, label: &str) {
